@@ -1,0 +1,741 @@
+<html>
+	<head>
+<!--	<script src="global.js" type="text/javascript"></script>
+		<script src="prototype.js" type="text/javascript"></script>
+
+		<script src="scriptaculous.js" type="text/javascript"></script>-->
+		
+				<script>
+		
+			var width = 7;
+			var height = 6;
+			
+			var RED = 0;
+			var GREEN = 1;
+			var EMPTY = 2;
+			
+			var PLAYERS = new Array(RED, GREEN);
+			
+			var compred = false;
+			var compgreen = false;
+			
+			var turn = RED;
+			
+			var board;
+			var playing = true;
+
+			var WIN = 100000;
+			var MIN = -99999999;
+			var MAX = 99999999;
+			var LOSE = 0;
+			var MAX_DEPTH = 4;
+			
+			var topMove;
+			
+			var blocked = false;
+
+			var minimaxcount;
+			var winner = new Array();
+			var certainWin = -1;
+
+			var DEBUG = false;
+			var debugNodes = new Array();
+			for (var i=0; i<=MAX_DEPTH; i++) debugNodes[i] = "<table><tr>";
+			
+			var ALPHA_BETA = true;
+			var alphaBeta = new Array();
+			var thinkingTime;
+			
+			function init() {
+				board = new Array(height);
+				for (var row=0; row<height; row++) board[row] = new Array(width);
+				for (var row=0; row<height; row++)
+					for (var col=0; col<width; col++)
+						board[row][col] = EMPTY;
+				for (var i=0; i<4; i++) winner[i] = new Array(0,0);
+				
+//				initPreset4();
+			}
+			
+			function initPreset1() {
+				board[2][5] = GREEN;
+				board[2][6] = RED;
+
+				board[3][0] = GREEN;
+				board[3][4] = GREEN;
+				board[3][5] = RED;
+				board[3][6] = GREEN;
+				
+				board[4][0] = RED;
+				board[4][3] = GREEN;
+				board[4][4] = GREEN;
+				board[4][5] = GREEN;
+				board[4][6] = RED;
+				
+				board[5][0] = RED;
+				board[5][3] = GREEN;
+				board[5][4] = RED;
+				board[5][5] = RED;
+				board[5][6] = RED;
+				
+			}
+			function initPreset2() {
+				board[4][2] = GREEN;
+				board[4][5] = RED;
+				board[4][6] = RED;
+				board[5][1] = GREEN;
+				board[5][2] = GREEN;
+				board[5][3] = GREEN;
+				board[5][5] = RED;
+				board[5][6] = RED;
+			}
+			function initPreset3() {
+				board[4][3] = GREEN;
+				board[5][3] = RED;
+			}
+			function initPreset4() {
+				board[0][3] = GREEN;
+				board[1][3] = RED;
+				board[2][0] = GREEN;
+				board[2][3] = GREEN;
+				board[3][0] = RED;
+				board[3][3] = RED;
+			}
+			
+			function render() {
+				var elem = document.getElementById("board");
+				var html = "<table class=\"board\">";
+				var cl;
+				for (var row=0; row<height; row++) {
+					html += "<tr>"
+					for (var col=0; col<width; col++) {
+						if (board[row][col] == EMPTY) cl = "e";
+						else if (board[row][col] == RED) cl = "r";
+						else if (board[row][col] == GREEN) cl = "g";
+						html += "<td id=\"r" + row + "c" + col +"\" onmouseover=\"if (!blocked) highlight(" + col + ")\" onmouseout=\"if (!blocked) unhighlight(" + col + ")\" onclick=\"if (!blocked) move(" + col + ")\" class=\"" + cl + "\"></td>";
+					}
+					html += "</tr>"
+				}
+				html += "</table>"
+				elem.innerHTML = html;
+				document.getElementById("turn").innerHTML = "Turn: <br><img src=\"" + (turn == RED ? "sphere-red-60px.jpg" : "sphere-green-60px.jpg" ) + "\">";
+				
+			}
+			
+			function highlight(col) {
+				if (!playing) return;
+				for (var row=0; row<height; row++) {
+					var elem = document.getElementById("r" + row + "c" + col);
+					if (elem.className.substring(0,1) != "h")
+						elem.className="h_" + elem.className;
+				}
+			}
+			
+			function fade(col) {
+				for (var row=0; row<height; row++) {
+					var elem = document.getElementById("r" + row + "c" + col);
+						elem.className="f_" + elem.className;
+				}
+			}
+			
+			function unhighlight(col) {
+				if (!playing) return;
+				for (var row=0; row<height; row++) {
+					var elem = document.getElementById("r" + row + "c" + col);
+					if (elem.className.substring(0,1) == "h")
+						elem.className=elem.className.substring(2);
+				}
+			}
+			
+			function addPiece(row, col) {
+				var elem = document.getElementById("r" + row + "c" + col);
+				elem.className = turn == RED ? "r" : "g";
+//				new Effect.SlideDown(elem);
+			}
+			
+			function newGame() {
+				playing=true;
+
+				height = document.forms[0].elements["rows"].selectedIndex+1;
+				width = document.forms[0].elements["cols"].selectedIndex+1;
+				
+
+				compred = false;
+				compgreen = false;
+				
+				var p1type = document.forms[0].elements["p1type"].selectedIndex;
+				var p1color = document.forms[0].elements["p1color"].selectedIndex;
+				var p2type = document.forms[0].elements["p2type"].selectedIndex;
+				var p2color = document.forms[0].elements["p2color"].selectedIndex;
+				
+				if (p1color == 0 && p1type == 1)
+					compred = true;
+				if (p1color == 1 && p1type == 1)
+					compgreen = true;
+				if (p2color == 0 && p2type == 1)
+					compred = true;
+				if (p2color == 1 && p2type == 1)
+					compgreen = true;
+				
+				document.getElementById("gameinfo").innerHTML = "Playing " + (p1type == 0 ? "human" : "computer") + " (" + (p1color == 0 ? "red" : "green") + ") against " + (p2type == 0 ? "human" : "computer") + " (" + (p2color == 0 ? "red" : "green") + ").";
+
+				init();
+				render();
+				
+				turn = p1color;
+				if ((turn == RED && compred) || (turn == GREEN && compgreen)) {
+					computerMove();
+				}
+				
+			}
+			
+			function move(col) {
+				
+				if (!playing)
+					return false;
+					
+				clearMsg();
+				if (validMove(col)) {
+					var row=height-1;
+					while (board[row][col] != EMPTY && row > 0)
+						row--;
+					
+//					debug("r" + row + "c" + col + " " + turn);
+					turn = (turn == RED ? GREEN : RED);
+					render();
+					turn = (turn == RED ? GREEN : RED);
+					board[row][col] = turn;
+					addPiece(row, col);
+//					turn = (turn == RED ? GREEN : RED);
+//					turn = (turn == RED ? GREEN : RED);
+//					turn = (turn == RED ? GREEN : RED);
+					if (findWin(board)) {
+						win(turn);
+						render();
+						turn = (turn == RED ? GREEN : RED);
+						for (var col = 0; col < width; col ++) {
+							fade(col);
+						}
+						for (var i=0; i<4; i++) {
+//							debug("winner " + winner[i][0] + "," + winner[i][1]);
+							var elem = document.getElementById("r"+winner[i][0]+"c"+winner[i][1]);
+							elem.className = "h_" + elem.className.substring(2,3);
+						}
+						return true;
+					}
+					turn = (turn == RED ? GREEN : RED);
+					
+					if ((turn == RED && compred) || (turn == GREEN && compgreen)) {
+						blocked = true;
+						thinkingOn();
+						setTimeout("computerMove();", 200);
+						blocked = false;
+					}
+					return true;
+				}
+					
+				msg("Sorry, you cannot move here.");
+				return false;
+			}
+			
+			function computerMove() {
+//				debug(" who " + turn);
+//				debug(" board " + board);
+				document.getElementById("debug").innerHTML = "";
+				var who = turn;	
+				var state = copy(board);
+				
+				minimaxcount = 0;
+				alphaBeta = new Array();
+				var m = minimax(state, MAX_DEPTH, true, who);
+				
+//				debug(" who " + turn);
+				turn = who;
+//				debug(" who " + turn);
+//				// debug(" best col " + bestCol);
+//				debug(" board " + board);
+				if (certainWin > -1) topMove = certainWin;
+				move(topMove);
+//				certainWin = -1;
+				thinkingOff();
+				
+			}
+			
+			function thinkingOn() {
+				document.getElementById("thinking").innerHTML = "<i>Thinking...</i>";
+				thinkingTime = new Date().getTime();
+			}
+			
+			function thinkingOff() {
+				document.getElementById("thinking").innerHTML = "Done thinking.  Computer visited <b>" + minimaxcount + "</b> minimax nodes, which took <b>" + (new Date().getTime() - thinkingTime)/1000 + "</b> seconds.";
+			}
+			
+			/* compute minimax for given play state, up to given depth.  if max is true, this is a max level; otherwise, this is a min level. */
+			function minimax(state, depth, max) {
+				/* if max level, then current player's turn.  otherwise, oppoonent's turn. */
+				//turn = who;
+				minimaxcount ++;
+				var vals = new Array();
+				if (depth == 0 || findWin(state)) {
+					var val = value(state, false);
+					if (DEBUG) debugNodes[0] += "<td>" + stateDump(state, val) + "</td>";
+					return val;
+				}
+				var best;
+				var bestCol = -1;
+				if (max) {
+					best = MIN;
+				} else {
+					best = MAX;
+				}
+				var val;
+	
+/*				val = value(state,false);
+			  if (val == WIN || val == -WIN) {
+					debug("found a win at depth " + depth + ", max " + max + ", turn " + turn + "<br>");
+					return val;
+			  }*/
+				for (var col=0; col<width; col++) {
+					if (validMove(col)) { // for each valid possible move
+						var newState = copy(state); // make a copy of the state
+						for (var row=height-1; row>0; row--) {
+							if (newState[row][col] == EMPTY) {
+								newState[row][col] = (max ? turn : 1-turn); // place the computer's piece in the play state
+								break;
+							}
+						}
+		//				debug(" col " + col);
+						if (depth == MAX_DEPTH) {
+							if (value(newState, true, turn) == WIN) {
+								certainWin = col;
+								return;
+							}
+						}
+						val = minimax(newState, depth-1, !max);
+//						debug(stateDump(newState, val));
+						if (DEBUG) debugNodes[depth] += "<td>" + stateDump(newState, val) + "</td>";
+			//			debug(" val is " + val);
+			vals[vals.length] = val;
+//			debug(stateDump(newState));
+						if (max && val > best) {
+							best = val;
+							bestCol = col;
+							if (ALPHA_BETA && alphaBeta[depth] && best >= alphaBeta[depth]) {
+		//						debug("AB: pruning at child " + col + " because " + best + " >= " + alphaBeta[depth] + "<br>");
+								break;
+							}
+						} else if (!max && val < best) {
+							best = val;
+							bestCol = col;
+							if (ALPHA_BETA && alphaBeta[depth] && best <= alphaBeta[depth]) {
+	//							debug("AB: pruning at child " + col + " because " + best + " <= " + alphaBeta[depth] + "<br>");
+								break;
+							}
+						}
+					}
+				}
+				if (depth == MAX_DEPTH) {
+					topMove = bestCol;
+				}
+				
+				if (DEBUG) {
+					debugNodes[depth] += "</tr></table>";
+					debug(debugNodes[depth]);
+					debugNodes[depth] = "<table><tr>";
+				}
+//				if (depth > 2)
+//				debug(" depth " + depth + (max ? " max " : " min ") + " vals [" + vals + "], we're picking " + best + " at col " + bestCol + "<br>");
+//				debug(" minimax depth " + depth + " max " + max + " bestCol " + bestCol + " best " + best + stateDump(state));
+				//if (bestCol == -1) debug(" dammit");
+				//else debug(" whee!");
+				if (ALPHA_BETA) {
+					if (!alphaBeta[depth]) alphaBeta[depth] = best;
+					else if (max && best < alphaBeta[depth]) alphaBeta[depth] = best;
+					else if (!max && best > alphaBeta[depth]) alphaBeta[depth] = best;
+//					debug("AB[" + depth + "]: " + alphaBeta[depth] + "<br>");
+					alphaBeta[depth-1] = null;
+				}
+				
+				return best;
+				
+			}
+			
+			function stateDump(state, val) {
+
+				var result = "<b>" + val + "</b><table>";
+				for (var r=0; r<state.length; r++) {
+					result += "<tr>";
+					for (var c=0; c<state[r].length; c++) {
+						var color = (state[r][c] == 0 ? "red" : state[r][c] == 1 ? "green" : "#ddd");
+						result += "<td width=5 style=\"background-color: " + color + "\">&nbsp;</td>";
+					}
+					result += "</tr>";
+				}
+				result += "</table>";
+				return result;
+			}
+			
+			function validMove(col) {
+				if (col < 0 || col > width-1) return false;
+				if (board[0][col] == EMPTY) return true;
+				else return false;
+			}
+			
+			function copy(arr) {
+				if (!arr) return null;
+				var result = new Array(height);
+				
+				for (var i=0; i<height; i++) {
+					result[i] = new Array(width);
+				}
+				
+				for (var row=0; row<height; row++) 
+					for (var col=0; col<width; col++) 
+						result[row][col] = arr[row][col];
+						
+				return result;
+			}
+			
+			function clearMsg() {
+				document.getElementById("msg").innerHTML = "";
+			}
+			
+			function msg(msg) {
+				document.getElementById("msg").innerHTML = msg;
+			}
+			
+
+			function findWin(state) {
+				if (Math.abs(value(state, true, turn)) == WIN) return true;
+//				debug(" turn " + turn + ", val " + value(board, true));
+				return false;
+			}
+			
+			/* compute this state's play value for the given position */
+			function score(state, row, col) {
+				var total = 0;
+				var goX = 0;
+				var goY = 0;
+
+				/* horizontal */
+				if (col < width-3) {
+					n = checkFour(state, row, col, 1, 0);
+					total += n;
+					if (n == WIN || n == -WIN) return n;
+				}
+				
+				/* vertical */
+				if (row < height-3) {
+					n = checkFour(state, row, col, 0, 1);
+					total += n;
+					if (n == WIN || n == -WIN) return n;
+				}
+
+				/* diagonals */
+				if (col < width-3 && row < height-3) {
+					n = checkFour(state, row, col, 1, 1);
+					total += n;
+					if (n == WIN || n == -WIN) return n;
+				}
+				if (col > 2 && row < height-3) {
+					n = checkFour(state, row, col, -1, 1);
+					total += n;
+					if (n == WIN || n == -WIN) return n;
+				}
+				//debug("row " + row + " col " + col + " total " + total + "<br>");
+				return total;
+			}
+			
+			function playerName(who) {
+				return (who == RED ? "RED" : (who == GREEN ? "GREEN" : "EMPTY"));
+			}
+			
+			function checkFour(state, row, col, goX, goY) {
+				var ownedRed = true;
+				var ownedGreen = true;
+				var redCount = 0;
+				var greenCount = 0;
+				
+				for (var i=0; i<4; i++) {
+					if (ownedRed && state[row][col] != RED && state[row][col] != EMPTY) {
+						ownedRed = false;
+					} else if (state[row][col] == RED) redCount++;
+					
+					if (ownedGreen && state[row][col] != GREEN && state[row][col] != EMPTY) {
+						ownedGreen = false;
+					} else if (state[row][col] == GREEN) greenCount++;
+
+					winner[i] = new Array(row,col);
+					
+					row += goY;
+					col += goX;
+				}
+				if (ownedRed && redCount == 4) { 
+					//debug("RED WIN [row " + row + " col " + col + " goX " + goX + " goY " + goY + " or " + ownedRed + " rc " + redCount + " og " + ownedGreen + " gc " + greenCount + "] <br>");
+					//debug("[winner] " + winner + "<br>");
+					if (turn == RED) return WIN; else return -WIN;
+				}
+				if (ownedGreen && greenCount == 4) { 
+					//debug("GREEN WIN [row " + row + " col " + col + " goX " + goX + " goY " + goY + " or " + ownedRed + " rc " + redCount + " og " + ownedGreen + " gc " + greenCount + "] <br>");
+					//debug("[winner] " + winner + "<br>");
+					if (turn == GREEN) return WIN; else return -WIN;
+				}
+				
+				winner = new Array();
+				
+				if (ownedRed && turn == RED) return (redCount == 0 ? 0 : Math.pow(10, redCount-1));
+				if (ownedRed && turn == GREEN) return (0-greenCount == 0 ? 0 : 0-Math.pow(10, greenCount-1));
+				if (ownedGreen && turn == GREEN) return (greenCount == 0 ? 0 : Math.pow(10, greenCount-1));
+				if (ownedGreen && turn == RED) return (0-redCount == 0 ? 0 : 0-Math.pow(10, redCount-1));
+				return 0;
+			}
+			
+			function value(state, render) {
+				debugClear();
+//				var resultRed = 0;
+//				var resultGreen = 0;
+				var n;
+				var result = 0;
+				//var html = "<table border=1>";
+				for (var row=0; row<height; row++) {
+					//html+="<tr>";
+					for (var col=0; col<width; col++) {
+						//html+="<td>";
+						n = score(state, row, col);
+						if (n == WIN || n == -WIN) {
+							return n;
+						}
+						result += n;
+						//html+=""+n;
+						//html+="</td>";
+					}
+					//html+="</tr>"
+				}
+//				if (render) document.getElementById("score").innerHTML = "<div class=\"red\">Red's score: <b>" + resultRed + "</b></div><div class=\"green\">Green's score: <b>" + resultGreen + "</b></div>";
+				return result;
+				//if (n == WIN resultRed == WIN || resultGreen == WIN) debug(" WHOA WIN, FOR TURN " + playerName(turn) + ", rr " + resultRed + ", rg " + resultGreen);
+				
+				//if (n == WIN) return WIN;
+//				debug(" valturn " + turn);
+				//var result = resultRed-resultGreen;
+				//if (who == RED) return result;
+				//else return -result;
+				//html+="</table>";
+				//debug(html);
+				//debug("score for turn " + playerName(turn) + " is now " + result + "  ");
+
+				/*
+				for (var row=0; row<height; row++) {
+					for (var col=0; col<width-3; col++) {
+						var i = turn;
+						if (state[row][col] == PLAYERS[i] && state[row][col+1] == PLAYERS[i] && state[row][col+2] == PLAYERS[i] && state[row][col+3] == PLAYERS[i]) {
+							return WIN;
+						if (ours(state, row, col, turn) && ours(state, row, col+1, turn) && ours(state, row, col+2, turn) && ours(state, row, col+3, turn))
+							count++;
+					}
+				}
+				*/
+				/* vertical wins */
+				/*for (var col=0; col<width; col++) {
+					for (var row=0; row<height-3; row++) {
+						var i = turn;
+						if (state[row][col] == PLAYERS[i] && state[row+1][col] == PLAYERS[i] && state[row+2][col] == PLAYERS[i] && state[row+3][col] == PLAYERS[i]) {
+							return WIN;
+						}
+					}
+				}
+				*/
+				/* diagonal wins */
+				/*for (var row=0; row<height-3; row++) {
+					for (var col=0; col<height-3-row; col++) {
+						var q = PLAYERS[turn];
+						if (state[row+col][col] == q && state[row+col+1][col+1] == q && state[row+col+2][col+2] == q && state[row+col+3][col+3] == q) {
+							return WIN;
+						}
+						if (state[height-1-row-col][width-1-col] == q && state[height-1-row-col-1][width-1-col-1] == q && state[height-1-row-col-2][width-1-col-2] == q && state[height-1-row-col-3][width-1-col-3] == q) {
+							return WIN;
+						}
+						if (state[height-1-row-col][col] == q && state[height-1-row-col-1][col+1] == q && state[height-1-row-col-2][col+2] == q && state[height-1-row-col-3][col+3] == q) {
+							return WIN;
+						}
+						if (state[row+col][width-1-col] == q && state[row+col+1][width-1-col-1] == q && state[row+col+2][width-1-col-2] == q && state[row+col+3][width-1-col-3] == q) {
+							return WIN;
+						}
+					}
+				}*/
+//				return findDraw();
+			}
+			
+			function win(q) {
+				msg("<h2>"+ (q == RED ? "RED" : "GREEN") + " wins!</h2>");
+				playing = false;
+			}
+			
+			function findDraw() {
+				for (var row=0; row<height; row++)
+					for (var col=0; col<width; col++)
+						if (board[row][col] == EMPTY) return false;
+				
+				msg("<h2>A DRAW!</h2>");
+				for (var col = 0; col < width; col ++) {
+					highlight(col);
+				}
+				playing = false;
+				return true;
+			}
+			
+			function flip(elem) {
+				var s1 = document.forms[0].elements["p1color"].selectedIndex;
+				var s2 = document.forms[0].elements["p2color"].selectedIndex;
+				if (s1 == s2) {
+					if (elem.name == "p1color") {
+						document.forms[0].elements["p2color"].selectedIndex = 1-document.forms[0].elements["p1color"].selectedIndex;
+					}
+					else {
+						document.forms[0].elements["p1color"].selectedIndex = 1-document.forms[0].elements["p2color"].selectedIndex;
+					}
+				}
+			}
+			
+			/* used for debugging - pushes messages into a section at the bottom of the page. */
+			function debug(msg) {
+				document.getElementById("debug").innerHTML += msg;
+			}
+
+			function debugClear() {
+				//document.getElementById("debug").innerHTML = "";
+			}
+		</script>
+		<style>
+		* {
+		font-family: arial, verdana;
+		font-size: 10pt;
+		}
+		
+			.e { 
+				width: 60px; height: 60px;
+				background-image: url(sphere-grey-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.h_e { 
+				width: 60px; height: 60px;
+				background-image: url(highlight-sphere-grey-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.f_e { 
+				width: 60px; height: 60px;
+				background-image: url(Faded-sphere-grey-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.r { 
+				width: 60px; height: 60px;
+				background-image: url(sphere-red-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.h_r { 
+				width: 60px; height: 60px;
+				background-image: url(highlight-sphere-red-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.f_r { 
+				width: 60px; height: 60px;
+				background-image: url(faded-sphere-red-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.g { 
+				width: 60px; height: 60px;
+				background-image: url(sphere-green-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.h_g { 
+				width: 60px; height: 60px;
+				background-image: url(highlight-sphere-green-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.f_g { 
+				width: 60px; height: 60px;
+				background-image: url(faded-sphere-green-60px.jpg);
+				background-repeat: no-repeat;
+				background-position: center center;
+				padding: 0 0 0 0; margin: 0 0 0 0;
+			}
+			.board { 
+				padding: 0 0 0 0; margin: 0 0 0 0;
+				border-collapse: collapse;
+			}
+			.boardshadow {
+				float: left;
+				border-right: 2px solid #bbb;
+				border-bottom: 2px solid #bbb;
+				border-left: 2px solid #eee;
+				border-top: 2px solid #eee;
+			}
+			.boardshadow2 {
+				float: left;
+				border-right: 2px solid #999;
+				border-bottom: 2px solid #999;
+				border-left: 2px solid #eee;
+				border-top: 2px solid #eee;
+			}
+		</style>
+	</head>
+	<body onload="init(); render(); newGame();">
+		<form>
+			<table>
+				<tr><td colspan="2">
+					<h1 style="font-family: verdana; font-size: 20pt; font-weight:bold">Shiny Four!</h1>
+				  </td></tr>
+				<tr valign="top">
+					<td><div id="board"></div></td>
+					<td align="middle">
+						<p><div id="turn"></div></p>
+						<p><div id="msg"></div></p>
+						<p>
+							Player 1: <select name="p1type"><option>human</option><option>computer</option></select>
+							<select name="p1color" onchange="flip(this)"><option value="1">red</option><option value="2">green</option></select>
+							<br>
+							Player 2: <select name="p2type"><option>human</option><option selected="yes">computer</option></select>
+							<select name="p2color" onchange="flip(this)"><option value="1">red</option><option value="2" selected="yes">green</option></select>
+							<br>
+								Board size: <select name="rows"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option selected="yes">6</option><option>7</option><option>8</option><option>9</option><option>10</option></select> rows, <select name="cols"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option selected="yes">7</option><option>8</option><option>9</option><option>10</option></select> columns.
+						</p>
+						<p><input type="button" value="New Game" onclick="newGame()"></p>
+						<p><div id="gameinfo"></div></p>
+						<p><div id="score"></div></p>
+						<p><div style="width: 250px" id="thinking"></div></p>
+					</td>
+				</tr>
+			</table>
+		</form>
+			<div id="debug"/>
+<!--		<div class="boardshadow2">
+			<div class="boardshadow">-->
+				
+		<div id="hidden" style="visibility: hidden"> <!-- preload images -->
+			<img src="sphere-grey-60px.jpg">
+			<img src="sphere-red-60px.jpg">
+			<img src="sphere-green-60px.jpg">
+			<img src="highlight-sphere-grey-60px.jpg">
+			<img src="highlight-sphere-red-60px.jpg">
+			<img src="highlight-sphere-green-60px.jpg">
+			<img src="faded-sphere-grey-60px.jpg">
+			<img src="faded-sphere-red-60px.jpg">
+			<img src="faded-sphere-green-60px.jpg">
+		</div>
+	</body>
